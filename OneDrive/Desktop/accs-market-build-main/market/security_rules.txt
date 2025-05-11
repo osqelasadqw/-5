@@ -1,0 +1,208 @@
+# Firebase უსაფრთხოების წესები
+
+ეს დოკუმენტი წარმოადგენს აპლიკაციის უსაფრთხოების წესებს Firebase-ის სერვისებისთვის. ეს წესები უნდა გადავიტანოთ Firebase Console-ში შესაბამისი სერვისების კონფიგურაციაში.
+
+## Firestore უსაფრთხოების წესები
+
+```javascript
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ზოგადი ფუნქციები
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && (
+        // შემოწმება 'roles' კოლექციაში
+        exists(/databases/$(database)/documents/roles/$(request.auth.token.email)) &&
+        get(/databases/$(database)/documents/roles/$(request.auth.token.email)).data.role == 'admin'
+      );
+    }
+    
+    function isOwner(sellerId) {
+      return isAuthenticated() && request.auth.uid == sellerId;
+    }
+    
+    function isEscrowAgent() {
+      return isAuthenticated() && (
+        exists(/databases/$(database)/documents/roles/$(request.auth.token.email)) &&
+        (
+          get(/databases/$(database)/documents/roles/$(request.auth.token.email)).data.role == 'escrow_agent' ||
+          get(/databases/$(database)/documents/roles/$(request.auth.token.email)).data.role == 'admin'
+        )
+      );
+    }
+    
+    // მომხმარებლის პროფილები
+    match /users/{userId} {
+      // მომხმარებელს შეუძლია წაიკითხოს ნებისმიერი მომხმარებლის პროფილი
+      allow read: if isAuthenticated();
+      
+      // მომხმარებელს შეუძლია მხოლოდ საკუთარი პროფილის რედაქტირება
+      allow write: if isAuthenticated() && request.auth.uid == userId || isAdmin();
+    }
+    
+    // პროდუქტები (listings)
+    match /listings/{listingId} {
+      // წაკითხვა ყველასთვის შესაძლებელია
+      allow read: if true;
+      
+      // შექმნა შეუძლია ავტორიზებულ მომხმარებელს
+      allow create: if isAuthenticated() &&
+                      request.resource.data.sellerId == request.auth.uid;
+      
+      // განახლება შეუძლია მხოლოდ მფლობელს ან ადმინს
+      allow update: if isOwner(resource.data.sellerId) || isAdmin();
+      
+      // წაშლა შეუძლია მხოლოდ მფლობელს ან ადმინს
+      allow delete: if isOwner(resource.data.sellerId) || isAdmin();
+    }
+    
+    // მომხმარებლის როლები
+    match /roles/{email} {
+      // წაკითხვა შეუძლია ავტორიზებულ მომხმარებელს
+      allow read: if isAuthenticated();
+      
+      // მოდიფიკაცია შეუძლია მხოლოდ ადმინს
+      allow write: if isAdmin();
+    }
+  }
+}
+```
+
+## Realtime Database უსაფრთხოების წესები
+
+```javascript
+{
+  "rules": {
+    // ზოგადი ფუნქციები
+    ".read": false,
+    ".write": false,
+    
+    // ჩატის ოთახები
+    "chatRooms": {
+      "$roomId": {
+        // წაკითხვა მხოლოდ ოთახის მონაწილეებისთვის
+        ".read": "auth !== null && (data.child('participants').val() !== null && data.child('participants').val().indexOf(auth.uid) !== -1)",
+        
+        // შექმნა მხოლოდ ავტორიზებული მომხმარებლებისთვის, რომლებიც ოთახის მონაწილეები არიან
+        ".write": "auth !== null && (data.child('participants').val() === null || data.child('participants').val().indexOf(auth.uid) !== -1 || newData.child('participants').val().indexOf(auth.uid) !== -1)",
+        
+        // უნდა ჰქონდეს მინიმუმ 2 მონაწილე
+        ".validate": "newData.hasChild('participants') && newData.child('participants').isArray() && newData.child('participants').val().length >= 2"
+      }
+    },
+    
+    // შეტყობინებები
+    "messages": {
+      "$roomId": {
+        // წაკითხვა მხოლოდ ოთახის მონაწილეებისთვის, ამოწმებს chatRooms-ში
+        ".read": "auth !== null && root.child('chatRooms').child($roomId).child('participants').val() !== null && root.child('chatRooms').child($roomId).child('participants').val().indexOf(auth.uid) !== -1",
+        
+        // შეტყობინების გაგზავნა მხოლოდ ავტორიზებული მომხმარებლებისთვის, რომლებიც ოთახის მონაწილეები არიან
+        ".write": "auth !== null && root.child('chatRooms').child($roomId).child('participants').val() !== null && root.child('chatRooms').child($roomId).child('participants').val().indexOf(auth.uid) !== -1",
+        
+        "$messageId": {
+          // შეტყობინება უნდა შეიცავდეს აუცილებელ ველებს
+          ".validate": "newData.hasChild('senderId') && newData.hasChild('text') && newData.hasChild('timestamp') && newData.hasChild('recipientId')",
+          
+          // გამგზავნის ID უნდა ემთხვეოდეს მიმდინარე მომხმარებლის ID-ს
+          "senderId": {
+            ".validate": "newData.val() === auth.uid || newData.val() === 'system' || newData.val() === 'escrow_agent'"
+          }
+        }
+      }
+    },
+    
+    // მომხმარებლის ჩატები
+    "userChats": {
+      "$userId": {
+        // წაკითხვა მხოლოდ მფლობელისთვის
+        ".read": "auth !== null && auth.uid === $userId",
+        
+        // წერა მხოლოდ იმ შემთხვევაში, თუ მომხმარებელი არის ოთახის მონაწილე
+        ".write": "auth !== null && (auth.uid === $userId || root.child('chatRooms').child($roomId).child('participants').val().indexOf(auth.uid) !== -1)",
+        
+        "$roomId": {
+          // ჩატი უნდა შეიცავდეს აუცილებელ ველებს
+          ".validate": "newData.hasChild('lastMessage') && newData.hasChild('lastMessageTimestamp')"
+        }
+      }
+    },
+    
+    // escrow_agent სპეციალური წესები
+    "escrow_agent": {
+      // წვდომა მხოლოდ Escrow Agent როლის მქონე მომხმარებლებისთვის
+      ".read": "auth !== null && root.child('users').child(auth.uid).child('role').val() === 'escrow_agent' || auth !== null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
+      ".write": "auth !== null && root.child('users').child(auth.uid).child('role').val() === 'escrow_agent' || auth !== null && root.child('users').child(auth.uid).child('role').val() === 'admin'"
+    }
+  }
+}
+```
+
+## Firebase Storage უსაფრთხოების წესები
+
+```javascript
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // ფუნქციები
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && (
+        exists(/databases/(default)/documents/roles/$(request.auth.token.email)) &&
+        get(/databases/(default)/documents/roles/$(request.auth.token.email)).data.role == 'admin'
+      );
+    }
+    
+    // პროდუქტის სურათები
+    match /listings/{fileName} {
+      // წაკითხვა ყველასთვის
+      allow read;
+      
+      // ატვირთვა მხოლოდ ავტორიზებული მომხმარებლებისთვის
+      allow create: if isAuthenticated();
+      
+      // წაშლა მხოლოდ ადმინისტრატორისთვის
+      allow delete: if isAdmin();
+    }
+    
+    // მომხმარებლის პროფილის სურათები
+    match /profile/{userId}/{fileName} {
+      // წაკითხვა ყველასთვის
+      allow read;
+      
+      // ატვირთვა და წაშლა მხოლოდ მფლობელისთვის ან ადმინისტრატორისთვის
+      allow write: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+    }
+  }
+}
+```
+
+## ზოგადი უსაფრთხოების რეკომენდაციები
+
+1. **აუთენტიფიკაცია**:
+   - ყოველთვის შეამოწმეთ, არის თუ არა მომხმარებელი ავტორიზებული
+   - შეამოწმეთ როლები და წვდომის უფლებები
+
+2. **მონაცემების დაცვა**:
+   - მომხმარებელს უნდა ჰქონდეს წვდომა მხოლოდ მისთვის განკუთვნილ მონაცემებზე
+   - შეამოწმეთ, რომ მომხმარებლებს არ ჰქონდეთ წვდომა სხვის მონაცემებზე
+
+3. **მონაცემების ვალიდაცია**:
+   - შეამოწმეთ შემავალი მონაცემები
+   - განსაზღვრეთ ველების აუცილებლობა და ტიპები
+
+4. **ადმინისტრირება**:
+   - ადმინისტრატორის როლი მიანიჭეთ მხოლოდ სანდო პირებს
+   - ადმინი უნდა შეიქმნას დამოუკიდებლად Console-დან პროექტის დასაწყისში
+
+5. **მონიტორინგი**:
+   - ჩართეთ ლოგირება და უსაფრთხოების მონიტორინგი
+   - პერიოდულად შეამოწმეთ წვდომის ლოგები
+</rewritten_file> 
