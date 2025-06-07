@@ -19,16 +19,24 @@ export default function WinesPage() {
 
   // ფუნქცია Firebase Storage URL-ის გასაწმენდად და დასაკონვერტირებლად
   const getProperImageUrl = async (url: string): Promise<string | null> => {
-    if (url.startsWith('gs://')) {
+    // ვამოწმებთ Firebase Storage-ის URL-ს
+    if (url.startsWith('gs://') || url.includes('firebasestorage.googleapis.com')) {
       try {
-        // თუ URL იწყება gs:// ფორმატით, გადავაკონვერტიროთ https:// ფორმატში
-        console.log("Converting gs:// URL to https://", url);
+        // თუ URL იწყება gs:// ფორმატით ან შეიცავს firebasestorage, გადავაკონვერტიროთ https:// ფორმატში
+        console.log("Converting Firebase Storage URL:", url);
+        
+        // თუ URL უკვე არის https:// ფორმატში, მაგრამ შეიცავს firebasestorage.googleapis.com
+        if (url.startsWith('http')) {
+          return url; // პირდაპირ დავაბრუნოთ ეს URL
+        }
+        
+        // თუ URL არის gs:// ფორმატში, გადავაკონვერტიროთ https:// ფორმატში
         const storageRef = ref(storage, url);
         const httpsUrl = await getDownloadURL(storageRef);
         console.log("Converted URL:", httpsUrl);
         return httpsUrl;
       } catch (error) {
-        console.error("Error converting gs:// URL:", error);
+        console.error("Error converting Firebase Storage URL:", error);
         return null; // შეცდომის შემთხვევაში დავაბრუნოთ null
       }
     }
@@ -80,22 +88,37 @@ export default function WinesPage() {
         console.log("Fetching wine images from Firebase collection 'wines'...");
         const wineSnapshot = await getDocs(collection(db, "wines"))
         
+        // დავალაგოთ დოკუმენტები createdAt-ის მიხედვით, ახლიდან ძველისკენ
+        const sortedDocs = wineSnapshot.docs
+          .map(doc => ({ id: doc.id, data: doc.data() }))
+          .filter(doc => doc.data.url) // მხოლოდ ის დოკუმენტები, რომლებსაც აქვთ url
+          .sort((a, b) => {
+            // დავალაგოთ createdAt ველის მიხედვით, თუ ეს ველი არსებობს
+            if (a.data.createdAt && b.data.createdAt) {
+              const dateA = a.data.createdAt.toDate ? a.data.createdAt.toDate() : new Date(a.data.createdAt);
+              const dateB = b.data.createdAt.toDate ? b.data.createdAt.toDate() : new Date(b.data.createdAt);
+              return dateB.getTime() - dateA.getTime(); // ახლიდან ძველისკენ დალაგება
+            }
+            return 0;
+          });
+        
+        console.log(`Found ${sortedDocs.length} wine documents`);
+        
         // ყველა url-ის დამუშავება
         const imagePromises: Promise<string | null>[] = [];
-        wineSnapshot.forEach((doc) => {
-          if (doc.data().url) {
-            imagePromises.push(
-              getProperImageUrl(doc.data().url)
-                .then(processedUrl => {
-                  if (processedUrl) {
-                    console.log("Found and processed Firebase wine image:", processedUrl);
-                  } else {
-                    console.log("Skipping invalid Firebase wine image URL:", doc.data().url);
-                  }
-                  return processedUrl;
-                })
-            );
-          }
+        sortedDocs.forEach(({ id, data }) => {
+          console.log(`Processing wine document ${id}: URL=${data.url}`);
+          imagePromises.push(
+            getProperImageUrl(data.url)
+              .then(processedUrl => {
+                if (processedUrl) {
+                  console.log(`Document ${id}: URL processed successfully:`, processedUrl);
+                } else {
+                  console.log(`Document ${id}: Invalid URL:`, data.url);
+                }
+                return processedUrl;
+              })
+          );
         });
         
         // პარალელურად დავამუშავოთ ყველა URL
@@ -103,8 +126,8 @@ export default function WinesPage() {
           const processedImages = await Promise.all(imagePromises);
           // გავფილტროთ მხოლოდ მოქმედი URL-ები (null ღირებულებები გამოვრიცხოთ)
           const validImages = processedImages.filter(url => url !== null) as string[];
+          console.log(`Processed ${processedImages.length} URLs, ${validImages.length} valid images`);
           setWineImages(validImages);
-          console.log(`Successfully set Firebase wine images: ${validImages.length} valid out of ${processedImages.length} total`);
         } else {
           console.log("No Firebase wine images found");
           setWineImages([]); // ცარიელი მასივი თუ სურათები არ არის
@@ -222,8 +245,8 @@ export default function WinesPage() {
 
       {/* Great Wines Section */}
       <section className="py-16 bg-white relative">
-        <div className="text-center mb-6">
-          <h2 className="text-4xl font-light italic text-blue-600 bg-gray-100 inline-block px-8 py-2">Great wines tell a story</h2>
+        <div className="text-center mb-12">
+          <h2 className="text-5xl font-light italic" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Great wines tell a story</h2>
         </div>
         
         <div className="container mx-auto px-4">
@@ -238,61 +261,102 @@ export default function WinesPage() {
                   <p className="text-xl text-gray-600">No wine images available at this time.</p>
                 </div>
               ) : (
-                <div className="flex flex-col md:flex-row gap-8">
-                  {/* Wine Images */}
-                  <div className="md:w-8/12">
-                    <div className="flex gap-4">
-                      {wineImages.slice(0, 3).map((src, i) => (
-                        <div key={i} className="relative h-[350px] flex-1">
-                          <Image
-                            src={src}
-                            alt={`Wine image ${i + 1}`}
-                            fill
-                            className="object-cover"
-                            loading={i === 0 ? "eager" : "lazy"}
-                            sizes="(max-width: 768px) 100vw, 33vw"
-                            onError={(e) => {
-                              // აღარ გამოვიტანთ შეცდომას კონსოლში
-                              // console.error("Failed to load wine image:", src);
-                              // შეცდომის შემთხვევაში მოვაშოროთ სურათის კონტეინერი
-                              const container = (e.target as HTMLImageElement).parentElement;
-                              if (container) container.style.display = "none";
-                            }}
-                          />
-                        </div>
-                      ))}
+                <>
+                  {/* ზედა ღვინის სექცია */}
+                  <div className="flex flex-col md:flex-row gap-8 mb-16">
+                    {/* ღვინის სურათები */}
+                    <div className="md:w-3/4">
+                      <div className="grid grid-cols-3 gap-4">
+                        {wineImages.slice(0, 3).map((src, i) => (
+                          <div key={i} className="relative h-[320px]">
+                            <Image
+                              src={src}
+                              alt={`Wine image ${i + 1}`}
+                              fill
+                              className="object-cover"
+                              loading={i === 0 ? "eager" : "lazy"}
+                              sizes="(max-width: 768px) 100vw, 33vw"
+                              onError={(e) => {
+                                const container = (e.target as HTMLImageElement).parentElement;
+                                if (container) container.style.display = "none";
+                              }}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* "Matisi" ინფორმაცია */}
+                    <div className="md:w-1/4 flex items-center">
+                      <div>
+                        <p className="text-gray-700">
+                          "Matisi" offers variety of naturally made unique wines produced in the village located only 30 minutes away from the hotel (close to Alaverdi monastery).
+                        </p>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Wine Info */}
-                  <div className="md:w-4/12 p-8 bg-white shadow-lg border border-gray-100">
-                    <h3 className="text-2xl font-semibold mb-4">Wine Cellar & Bar</h3>
-                    <p className="text-gray-700 mb-6">
-                      Discover the richness of Georgian wine tradition in our cellar featuring a curated selection of local 
-                      and international vintages. Our sommeliers will guide you through a tasting journey from 
-                      traditional qvevri wines to modern interpretations of classic Georgian varieties.
-                    </p>
-                    <div className="space-y-4">
-                      <div className="flex items-center">
-                        <div className="w-2 h-2 bg-orange-400 rounded-full mr-2"></div>
-                        <span>Exclusive Georgian Wine Varieties</span>
+                  {/* მწვანე ნაწილი */}
+                  <div className="bg-[#A9B4A3] py-12 px-8 mb-16">
+                    <div className="container mx-auto text-center">
+                      <p className="text-xl mb-6">
+                        Almost everywhere you go, you'll be invited to drink a glass of traditional Qvevri wine in Georgia.
+                      </p>
+                      <p className="text-xl mb-6">
+                        However, when you visit us, you won't have to go far for this experience since we make a variety of wines under name "Matisi" and offer it to our guests.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* ქვედა Chacha სექცია */}
+                  <div className="flex flex-col md:flex-row gap-8">
+                    {/* ჭაჭის ინფორმაცია */}
+                    <div className="md:w-1/3 flex flex-col justify-center">
+                      <div className="space-y-8">
+                        <p className="text-gray-700">
+                          Our bar offers a wide selection of Chacha with natural ingredients and made by old Kakhetian traditional method.
+                        </p>
+                        <p className="text-gray-700">
+                          Try the variety: Mint, Cinnamon, Tarragon and Traditional...
+                        </p>
+                        <p className="text-gray-700">
+                          Name the favorite one!
+                        </p>
                       </div>
-                      <div className="flex items-center">
-                        <div className="w-2 h-2 bg-orange-400 rounded-full mr-2"></div>
-                        <span>Private Cellar Tastings</span>
-                      </div>
-                      <div className="flex items-center">
-                        <div className="w-2 h-2 bg-orange-400 rounded-full mr-2"></div>
-                        <span>Expert Sommelier Guidance</span>
+                    </div>
+
+                    {/* ჭაჭის სურათები */}
+                    <div className="md:w-2/3">
+                      <div className="grid grid-cols-3 gap-4">
+                        {wineImages.slice(3, 6).map((src, i) => (
+                          <div key={i} className="relative h-[320px]">
+                            <Image
+                              src={src}
+                              alt={`Chacha image ${i + 1}`}
+                              fill
+                              className="object-cover"
+                              loading="lazy"
+                              sizes="(max-width: 768px) 100vw, 33vw"
+                              onError={(e) => {
+                                const container = (e.target as HTMLImageElement).parentElement;
+                                if (container) container.style.display = "none";
+                              }}
+                            />
+                          </div>
+                        ))}
                       </div>
                     </div>
                   </div>
-                </div>
+                </>
               )}
             </>
           )}
         </div>
       </section>
+
+      <style jsx global>{`
+        @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500&display=swap');
+      `}</style>
 
       {/* Footer */}
       <Footer />

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useAuth } from "@/lib/auth"
 import Link from "next/link"
+import { Footer } from "@/components/Footer"
 
 export default function ContactPage() {
   const { user, signOut } = useAuth()
@@ -132,6 +133,9 @@ export default function ContactPage() {
           </div>
         </section>
       </main>
+      
+      {/* Footer */}
+      <Footer />
     </div>
   )
 } 

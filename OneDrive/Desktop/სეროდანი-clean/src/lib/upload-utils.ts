@@ -133,10 +133,13 @@ export async function addRoom(roomData: {
   description: string
   price: number
   imageUrl: string
+  images?: { url: string; position: number }[]
 }): Promise<string> {
   try {
     const docRef = await addDoc(collection(db, "rooms"), {
       ...roomData,
+      // თუ სურათების მასივი არ არის მოცემული, მაშინ შევქმნათ ერთელემენტიანი მასივი მთავარი სურათით
+      images: roomData.images || [{ url: roomData.imageUrl, position: 0 }],
       createdAt: new Date(),
     })
     return docRef.id
@@ -169,4 +172,9 @@ export async function updateLargePhoto(imageUrl: string): Promise<void> {
 // Update guest review image
 export async function updateGuestReviewImage(imageUrl: string): Promise<void> {
   await updateSectionContent("guestReview", { imageUrl })
+}
+
+// Update rooms page hero image
+export async function updateRoomsHeroImage(imageUrl: string): Promise<void> {
+  await updateSectionContent("roomsHero", { imageUrl })
 }

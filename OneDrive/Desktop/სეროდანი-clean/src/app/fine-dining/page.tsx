@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react"
 import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/lib/auth"
-import { User, ChevronLeft, ChevronRight, X } from "lucide-react"
+import { User, X } from "lucide-react"
 import Link from "next/link"
 import { Footer } from "@/components/Footer"
 import { collection, getDoc, doc, getDocs } from "firebase/firestore"
@@ -14,37 +14,37 @@ import { getDownloadURL, ref } from "firebase/storage"
 export default function FineDiningPage() {
   const { user, signOut } = useAuth()
   const [loading, setLoading] = useState(true)
-  const sliderTrackRef = useRef<HTMLDivElement>(null)
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
+  const sliderTrackRef = useRef<HTMLDivElement>(null)
+  const animationRef = useRef<number | null>(null)
   
   // დეფოლტი სურათების პათები სანამ Firebase-დან ჩაიტვირთება
   const [heroImage, setHeroImage] = useState<string | null>(null)
-  const [diningImages, setDiningImages] = useState<string[]>([
-    '/finedings/2.jpg',
-    '/finedings/3.jpg',
-    '/finedings/4.jpg',
-    '/finedings/5.jpg',
-    '/finedings/6.jpg',
-    '/finedings/7.jpg',
-    '/finedings/8.jpg',
-    '/finedings/9.jpg',
-  ])
+  const [diningImages, setDiningImages] = useState<string[]>([])
   
   // მენიუს სურათი
   const [menuImage, setMenuImage] = useState<string | null>(null)
 
   // ფუნქცია Firebase Storage URL-ის გასაწმენდად და დასაკონვერტირებლად
   const getProperImageUrl = async (url: string): Promise<string | null> => {
-    if (url.startsWith('gs://')) {
+    // ვამოწმებთ Firebase Storage-ის URL-ს
+    if (url.startsWith('gs://') || url.includes('firebasestorage.googleapis.com')) {
       try {
-        // თუ URL იწყება gs:// ფორმატით, გადავაკონვერტიროთ https:// ფორმატში
-        console.log("Converting gs:// URL to https://", url);
+        // თუ URL იწყება gs:// ფორმატით ან შეიცავს firebasestorage, გადავაკონვერტიროთ https:// ფორმატში
+        console.log("Converting Firebase Storage URL:", url);
+        
+        // თუ URL უკვე არის https:// ფორმატში, მაგრამ შეიცავს firebasestorage.googleapis.com
+        if (url.startsWith('http')) {
+          return url; // პირდაპირ დავაბრუნოთ ეს URL
+        }
+        
+        // თუ URL არის gs:// ფორმატში, გადავაკონვერტიროთ https:// ფორმატში
         const storageRef = ref(storage, url);
         const httpsUrl = await getDownloadURL(storageRef);
         console.log("Converted URL:", httpsUrl);
         return httpsUrl;
       } catch (error) {
-        console.error("Error converting gs:// URL:", error);
+        // თუ შეცდომა მოხდა, არ გამოვიტანოთ საჯაროდ
         return null; // შეცდომის შემთხვევაში დავაბრუნოთ null
       }
     }
@@ -84,7 +84,7 @@ export default function FineDiningPage() {
           const heroUrl = await getProperImageUrl(heroDoc.data().imageUrl);
           if (heroUrl) {
             setHeroImage(heroUrl);
-            console.log("Dining hero loaded from Firebase:", heroUrl);
+            console.log("Dining hero loaded from Firebase");
           } else {
             console.log("Dining hero URL not valid, not displaying any hero");
           }
@@ -96,22 +96,26 @@ export default function FineDiningPage() {
         console.log("Fetching dining images from Firebase collection 'dining'...");
         const diningSnapshot = await getDocs(collection(db, "dining"))
         
+        // დავალაგოთ დოკუმენტები createdAt-ის მიხედვით, ახლიდან ძველისკენ
+        const sortedDocs = diningSnapshot.docs
+          .map(doc => ({ id: doc.id, data: doc.data() }))
+          .filter(doc => doc.data.url) // მხოლოდ ის დოკუმენტები, რომლებსაც აქვთ url
+          .sort((a, b) => {
+            // დავალაგოთ createdAt ველის მიხედვით, თუ ეს ველი არსებობს
+            if (a.data.createdAt && b.data.createdAt) {
+              const dateA = a.data.createdAt.toDate ? a.data.createdAt.toDate() : new Date(a.data.createdAt);
+              const dateB = b.data.createdAt.toDate ? b.data.createdAt.toDate() : new Date(b.data.createdAt);
+              return dateB.getTime() - dateA.getTime(); // ახლიდან ძველისკენ დალაგება
+            }
+            return 0;
+          });
+        
+        console.log(`Found ${sortedDocs.length} dining documents`);
+        
         // ყველა url-ის დამუშავება
         const imagePromises: Promise<string | null>[] = [];
-        diningSnapshot.forEach((doc) => {
-          if (doc.data().url) {
-            imagePromises.push(
-              getProperImageUrl(doc.data().url)
-                .then(processedUrl => {
-                  if (processedUrl) {
-                    console.log("Found and processed Firebase dining image:", processedUrl);
-                  } else {
-                    console.log("Skipping invalid Firebase dining image URL:", doc.data().url);
-                  }
-                  return processedUrl;
-                })
-            );
-          }
+        sortedDocs.forEach(({ id, data }) => {
+          imagePromises.push(getProperImageUrl(data.url));
         });
         
         // პარალელურად დავამუშავოთ ყველა URL
@@ -119,11 +123,18 @@ export default function FineDiningPage() {
           const processedImages = await Promise.all(imagePromises);
           // გავფილტროთ მხოლოდ მოქმედი URL-ები (null ღირებულებები გამოვრიცხოთ)
           const validImages = processedImages.filter(url => url !== null) as string[];
-          setDiningImages(validImages);
-          console.log(`Successfully set Firebase dining images: ${validImages.length} valid out of ${processedImages.length} total`);
+          console.log(`Processed ${processedImages.length} URLs, ${validImages.length} valid images`);
+          
+          if (validImages.length > 0) {
+            // საკმარისი სურათები გვაქვს სლაიდერისთვის
+            setDiningImages(validImages);
+          } else {
+            console.log("No valid dining images from Firebase");
+            setDiningImages([]);
+          }
         } else {
           console.log("No Firebase dining images found");
-          setDiningImages([]); // ცარიელი მასივი თუ სურათები არ არის
+          setDiningImages([]);
         }
         
         // მენიუს სურათი
@@ -132,7 +143,7 @@ export default function FineDiningPage() {
           const menuUrl = await getProperImageUrl(menuDoc.data().imageUrl);
           if (menuUrl) {
             setMenuImage(menuUrl);
-            console.log("Menu image loaded from Firebase:", menuUrl);
+            console.log("Menu image loaded from Firebase");
           } else {
             console.log("Menu image URL not valid, not displaying any menu image");
           }
@@ -148,35 +159,72 @@ export default function FineDiningPage() {
     
     fetchContent()
     
-    const slider = sliderTrackRef.current
-    if (!slider || slider.children.length <= 1) {
-      return
-    }
-
-    let animationFrameId: number
-    let scrollPosition = 0
-    const speed = 0.3 // შენელებული სიჩქარე
-
-    const animate = () => {
-      scrollPosition += speed
-      const firstChild = slider.children[0] as HTMLElement
-      const itemWidth = firstChild.offsetWidth + parseInt(getComputedStyle(firstChild).marginRight)
-
-      if (scrollPosition >= itemWidth) {
-        slider.appendChild(firstChild)
-        scrollPosition -= itemWidth
-      }
-
-      slider.style.transform = `translateX(-${scrollPosition}px)`
-      animationFrameId = requestAnimationFrame(animate)
-    }
-
-    animationFrameId = requestAnimationFrame(animate)
-
     return () => {
-      cancelAnimationFrame(animationFrameId)
+      // წავშალოთ ანიმაცია, თუ კომპონენტი ანმაუნთდება
+      if (animationRef.current !== null) {
+        cancelAnimationFrame(animationRef.current)
+      }
     }
   }, [])
+  
+  // ცალკე useEffect სლაიდერის ანიმაციისთვის, რომელიც გაეშვება ფოტოების ჩატვირთვის შემდეგ
+  useEffect(() => {
+    // ანიმაციის დაწყება მხოლოდ მაშინ, როცა ფოტოები ჩატვირთულია და loading არ არის true
+    if (loading || diningImages.length === 0) {
+      return
+    }
+    
+    console.log("Starting dining slider animation with", diningImages.length, "images");
+    
+    // გაეშვას ცოტა დაყოვნებით, რომ DOM-ი დარენდერდეს
+    const timeoutId = setTimeout(() => {
+      const slider = sliderTrackRef.current;
+      if (!slider || slider.children.length <= 1) {
+        console.log("Slider not ready:", slider?.children.length, "children");
+        return;
+      }
+      
+      let position = 0;
+      const speed = 0.5; // სიჩქარე პიქსელებში
+      
+      // მარტივი ანიმაციის ფუნქცია
+      const animate = () => {
+        position += speed;
+        
+        // როცა პირველი სურათი სრულად გავა ეკრანიდან, გადაიტანე ბოლოში უხილავად
+        const firstChild = slider.children[0] as HTMLElement;
+        const itemWidth = firstChild.offsetWidth + 5; // +5 მარჯინისთვის (გაზრდილი მარჯინის გათვალისწინება)
+        
+        if (position >= itemWidth) {
+          // დავმალოთ გადატანის ანიმაცია - გადავიყვანოთ პოზიცია 0-ზე, გადავიტანოთ ელემენტი და შემდეგ ისევ დავაბრუნოთ CSS ტრანზიშენი
+          slider.style.transition = 'none';
+          slider.appendChild(firstChild);
+          position = 0;
+          slider.style.transform = `translateX(-${position}px)`;
+          
+          // ვაძალოთ რეფლოუ, რომ ცვლილებები გამოჩნდეს ტრანზიშენის დაბრუნებამდე
+          slider.offsetHeight; 
+          
+          // დავაბრუნოთ ტრანზიშენი
+          slider.style.transition = 'transform 0.1s linear';
+        } else {
+          slider.style.transform = `translateX(-${position}px)`;
+        }
+        
+        animationRef.current = requestAnimationFrame(animate);
+      };
+      
+      // დაიწყე ანიმაცია
+      animationRef.current = requestAnimationFrame(animate);
+    }, 500);
+    
+    return () => {
+      clearTimeout(timeoutId);
+      if (animationRef.current !== null) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    };
+  }, [loading, diningImages]);
 
   // გადიდების ფუნქციონალისთვის
   const openModal = (imageUrl: string) => {
@@ -268,7 +316,7 @@ export default function FineDiningPage() {
       </nav>
 
       {/* Hero Section with Brick Background */}
-      <section className="relative h-[550px] w-full">
+      <section className="relative h-[800px] w-full">
         <div className="absolute inset-0">
           {heroImage ? (
             <Image 
@@ -288,50 +336,72 @@ export default function FineDiningPage() {
         </div>
       </section>
       
-      {/* Slider Section - მთავარი გვერდის მსგავსი */}
-      <section className="py-8">
-        <div className="w-full px-0 overflow-hidden">
-          <div className="slider-container overflow-hidden w-full">
-            <div ref={sliderTrackRef} className="slider-track flex">
-              {diningImages.map((src, i) => (
-                <div
-                  key={i}
-                  className="relative flex-shrink-0 h-[280px]"
-                  style={{ width: "350px", marginRight: "10px" }}
-                >
-                  <Image
-                    src={src}
-                    alt={`Fine dining slider ${i + 1}`}
-                    fill
-                    sizes="350px"
-                    className="object-cover"
-                    loading={i < 3 ? "eager" : "lazy"}
-                  />
-                </div>
-              ))}
+      {/* უსასრულო სლაიდერი - მთავარი გვერდის მსგავსი */}
+      {diningImages.length > 0 && (
+        <section className="py-8">
+          <div className="w-full px-0 overflow-hidden">
+            <div className="slider-container overflow-hidden w-full">
+              <div ref={sliderTrackRef} className="slider-track flex">
+                {loading ? (
+                  <div className="hidden">
+                    {/* ჩატვირთვის ანიმაცია გადატანილია ზევით */}
+                  </div>
+                ) : (
+                  <>
+                    {/* ბევრი სურათი გავამრავლოთ რომ ცარიელი ადგილები არ დარჩეს */}
+                    {Array.from({ length: 3 }).flatMap((_, arrayIndex) =>
+                      diningImages.map((src, i) => (
+                        <div
+                          key={`${arrayIndex}-${i}`}
+                          className="relative flex-shrink-0 h-[280px] cursor-pointer"
+                          style={{ width: "350px", marginRight: "5px" }}
+                          onClick={() => openModal(src)}
+                        >
+                          <Image
+                            src={src}
+                            alt={`Fine dining ${i + 1}`}
+                            fill
+                            sizes="350px"
+                            className="object-cover"
+                            loading={arrayIndex === 0 && i < 3 ? "eager" : "lazy"}
+                            onError={(e) => {
+                              // მთლიანი დივის დამალვა შეცდომის შემთხვევაში
+                              const parent = (e.target as HTMLElement).parentElement;
+                              if (parent) parent.style.display = 'none';
+                            }}
+                          />
+                        </div>
+                      ))
+                    )}
+                  </>
+                )}
+              </div>
             </div>
+
+            <style jsx global>{`
+              .slider-container {
+                width: 100vw;
+                position: relative;
+                left: 50%;
+                right: 50%;
+                margin-left: -50vw;
+                margin-right: -50vw;
+                overflow: hidden;
+              }
+
+              .slider-track {
+                padding: 10px 0;
+                width: fit-content;
+                display: flex;
+                flex-wrap: nowrap;
+                transition: transform 0.1s linear;
+                font-size: 0; /* ხსნის დივებს შორის ცარიელ ადგილებს */
+                line-height: 0; /* ხსნის დივებს შორის ცარიელ ადგილებს */
+              }
+            `}</style>
           </div>
-
-          <style jsx global>{`
-            .slider-container {
-              width: 100vw;
-              position: relative;
-              left: 50%;
-              right: 50%;
-              margin-left: -50vw;
-              margin-right: -50vw;
-              overflow: hidden;
-            }
-
-            .slider-track {
-              padding: 10px 0;
-              width: fit-content;
-              display: flex;
-              flex-wrap: nowrap;
-            }
-          `}</style>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* Menu Section */}
       <section className="py-16 bg-gray-100">
@@ -350,6 +420,10 @@ export default function FineDiningPage() {
                   height={600}
                   className="object-contain mx-auto hover:scale-105 transition-transform duration-300"
                   loading="lazy"
+                  onError={(e) => {
+                    // შეცდომების დამალვა კონსოლიდან
+                    e.currentTarget.style.display = 'none';
+                  }}
                 />
               </div>
             )}
@@ -373,6 +447,11 @@ export default function FineDiningPage() {
               fill
               className="object-contain"
               sizes="90vw"
+              onError={(e) => {
+                // შეცდომების დამალვა კონსოლიდან
+                e.currentTarget.style.display = 'none';
+                closeModal();
+              }}
             />
             <button
               className="absolute top-4 right-4 p-2 bg-black/50 hover:bg-black/70 rounded-full text-white"
@@ -383,7 +462,8 @@ export default function FineDiningPage() {
           </div>
         </div>
       )}
-
+      
+      {/* Footer */}
       <Footer />
     </div>
   )

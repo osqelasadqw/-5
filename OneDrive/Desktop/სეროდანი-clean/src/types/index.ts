@@ -3,7 +3,11 @@ export interface Room {
   name: string
   description: string
   price: number
-  imageUrl: string
+  imageUrl: string // მთავარი სურათი (თავდაპირველი ვერსიისთვის თავსებადობის შესანარჩუნებლად)
+  images: {
+    url: string
+    position: number // სურათის პოზიცია სლაიდერში
+  }[]
   createdAt: Date
 }
 

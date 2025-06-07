@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { MapPin, Phone, Mail, ChevronLeft, ChevronRight, Star, User } from "lucide-react"
 import { collection, getDocs, doc, getDoc } from "firebase/firestore"
-import { db } from "@/lib/firebase"
+import { db, storage } from "@/lib/firebase"
 import { useAuth } from "@/lib/auth"
 import Link from "next/link"
 import { getStorage, ref, listAll, getDownloadURL } from "firebase/storage"
@@ -15,32 +15,15 @@ import { Footer } from "@/components/Footer"
 export default function KviriaHotel() {
   const [currentGalleryIndex, setCurrentGalleryIndex] = useState(0)
   const [heroImage, setHeroImage] = useState("/home/gallery (15).jpg")
-  const [sliderImages, setSliderImages] = useState<string[]>([
-    '/slider/1.jpg',
-    '/slider/2.jpg',
-    '/slider/3.jpg',
-    '/slider/4.jpg',
-    '/slider/5.jpg',
-    '/slider/6.jpg',
-    '/slider/7.jpg',
-  ])
+  const [sliderImages, setSliderImages] = useState<string[]>([])
   const [storyImages, setStoryImages] = useState<string[]>([])
   const [largePhoto, setLargePhoto] = useState("")
-  const [galleryImages, setGalleryImages] = useState<string[]>([
-    '/gallary/gallery.jpg',
-    '/gallary/gallery (2).jpg',
-    '/gallary/gallery (3).jpg',
-    '/gallary/gallery (4).jpg', 
-    '/gallary/gallery (5).jpg',
-    '/gallary/gallery (6).jpg',
-    '/gallary/gallery (7).jpg',
-    '/gallary/gallery (8).jpg',
-    '/gallary/gallery (9).jpg',
-  ])
+  const [galleryImages, setGalleryImages] = useState<string[]>([])
   const [guestReviewImage, setGuestReviewImage] = useState("")
   const [loading, setLoading] = useState(true)
   const { user, signOut, isAdmin } = useAuth()
   const sliderTrackRef = useRef<HTMLDivElement>(null)
+  const animationRef = useRef<number | null>(null)
 
   useEffect(() => {
     // გავასუფთავოთ ბრაუზერის ქეში სურათებიდან
@@ -75,13 +58,51 @@ export default function KviriaHotel() {
           console.log("Hero image document not found or no imageUrl")
         }
 
-        // სლაიდერის სურათების წამოღება Firebase-დან
-        const sliderDoc = await getDoc(doc(db, "sections", "slider"))
-        if (sliderDoc.exists() && sliderDoc.data().imageUrls && sliderDoc.data().imageUrls.length > 0) {
-          setSliderImages(sliderDoc.data().imageUrls)
-          console.log("Slider images loaded from Firebase:", sliderDoc.data().imageUrls)
-        } else {
-          console.log("Slider document not found or no imageUrls array")
+        // სლაიდერის სურათების წამოღება Firebase Storage-დან /slider ფოლდერიდან
+        try {
+          const sliderRef = ref(storage, '/slider');
+          const sliderResult = await listAll(sliderRef);
+          
+          const sliderImagePromises = sliderResult.items.map(async (imageRef) => {
+            try {
+              const url = await getDownloadURL(imageRef);
+              return url;
+            } catch (error) {
+              console.error("Error getting slider image URL:", error);
+              return null;
+            }
+          });
+          
+          const sliderImageUrls = (await Promise.all(sliderImagePromises)).filter(url => url !== null) as string[];
+          
+          if (sliderImageUrls.length > 0) {
+            setSliderImages(sliderImageUrls);
+            console.log("Slider images loaded from Firebase Storage:", sliderImageUrls.length);
+          } else {
+            console.log("No slider images found in Firebase Storage");
+            // Default fallback images
+            setSliderImages([
+              '/slider/1.jpg',
+              '/slider/2.jpg',
+              '/slider/3.jpg',
+              '/slider/4.jpg',
+              '/slider/5.jpg',
+              '/slider/6.jpg',
+              '/slider/7.jpg',
+            ]);
+          }
+        } catch (error) {
+          console.error("Error fetching slider images from Firebase Storage:", error);
+          // Default fallback images
+          setSliderImages([
+            '/slider/1.jpg',
+            '/slider/2.jpg',
+            '/slider/3.jpg',
+            '/slider/4.jpg',
+            '/slider/5.jpg',
+            '/slider/6.jpg',
+            '/slider/7.jpg',
+          ]);
         }
 
         // სთორის სურათების წამოღება Firebase-დან
@@ -119,50 +140,85 @@ export default function KviriaHotel() {
     }
 
     fetchContent()
+    
+    return () => {
+      // წავშალოთ ანიმაცია, თუ კომპონენტი ანმაუნთდება
+      if (animationRef.current !== null) {
+        cancelAnimationFrame(animationRef.current)
+      }
+    }
   }, [])
 
   // შევქმნათ გალერიის ფოტოების მასივი ლოკალური ფოლდერიდან
   useEffect(() => {
-    // გალერიის ფოტოების მასივი ლოკალური /galler ფოლდერიდან
-    const localGalleryImages = Array.from({ length: 22 }, (_, i) => `/galler/${i + 1}.jpg`)
+    // გალერიის ფოტოების მასივი ლოკალური /public ფოლდერიდან (და არა /galler-დან)
+    const localGalleryImages = Array.from({ length: 23 }, (_, i) => `/${i + 1}.jpg`)
     
     // თუ index 2-ზე არის, გამოვიყენოთ PNG ფორმატი, რადგან ეს ფაილი 2.png არის
-    localGalleryImages[1] = '/galler/2.png'
+    localGalleryImages[1] = '/2.png'
     
     setGalleryImages(localGalleryImages)
-    console.log("Gallery images loaded from local folder: /galler")
+    console.log("Gallery images loaded from local folder: / (root)")
   }, [])
-
+  
+  // ცალკე useEffect სლაიდერის ანიმაციისთვის, რომელიც გაეშვება ფოტოების ჩატვირთვის შემდეგ
   useEffect(() => {
-    const slider = sliderTrackRef.current
-    if (!slider || slider.children.length <= 1) {
+    // ანიმაციის დაწყება მხოლოდ მაშინ, როცა ფოტოები ჩატვირთულია და loading არ არის true
+    if (loading || sliderImages.length === 0) {
       return
     }
-
-    let animationFrameId: number
-    let scrollPosition = 0
-    const speed = 1.2 // Corresponds to previous "faster" speed
-
-    const animate = () => {
-      scrollPosition += speed
-      const firstChild = slider.children[0] as HTMLElement
-      const itemWidth = firstChild.offsetWidth + parseInt(getComputedStyle(firstChild).marginRight)
-
-      if (scrollPosition >= itemWidth) {
-        slider.appendChild(firstChild)
-        scrollPosition -= itemWidth
+    
+    console.log("Starting slider animation with", sliderImages.length, "images");
+    
+    // გაეშვას ცოტა დაყოვნებით, რომ DOM-ი დარენდერდეს
+    const timeoutId = setTimeout(() => {
+      const slider = sliderTrackRef.current;
+      if (!slider || slider.children.length <= 1) {
+        console.log("Slider not ready:", slider?.children.length, "children");
+        return;
       }
-
-      slider.style.transform = `translateX(-${scrollPosition}px)`
-      animationFrameId = requestAnimationFrame(animate)
-    }
-
-    animationFrameId = requestAnimationFrame(animate)
-
+      
+      let position = 0;
+      const speed = 0.5; // სიჩქარე პიქსელებში
+      
+      // მარტივი ანიმაციის ფუნქცია
+      const animate = () => {
+        position += speed;
+        
+        // როცა პირველი სურათი სრულად გავა ეკრანიდან, გადაიტანე ბოლოში უხილავად
+        const firstChild = slider.children[0] as HTMLElement;
+        const itemWidth = firstChild.offsetWidth + 10; // +10 მარჯინისთვის
+        
+        if (position >= itemWidth) {
+          // დავმალოთ გადატანის ანიმაცია - გადავიყვანოთ პოზიცია 0-ზე, გადავიტანოთ ელემენტი და შემდეგ ისევ დავაბრუნოთ CSS ტრანზიშენი
+          slider.style.transition = 'none';
+          slider.appendChild(firstChild);
+          position = 0;
+          slider.style.transform = `translateX(-${position}px)`;
+          
+          // ვაძალოთ რეფლოუ, რომ ცვლილებები გამოჩნდეს ტრანზიშენის დაბრუნებამდე
+          slider.offsetHeight; 
+          
+          // დავაბრუნოთ ტრანზიშენი
+          slider.style.transition = 'transform 0.1s linear';
+        } else {
+          slider.style.transform = `translateX(-${position}px)`;
+        }
+        
+        animationRef.current = requestAnimationFrame(animate);
+      };
+      
+      // დაიწყე ანიმაცია
+      animationRef.current = requestAnimationFrame(animate);
+    }, 500);
+    
     return () => {
-      cancelAnimationFrame(animationFrameId)
-    }
-  }, [sliderImages])
+      clearTimeout(timeoutId);
+      if (animationRef.current !== null) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    };
+  }, [loading, sliderImages]);
 
   const nextGalleryImage = () => {
     setCurrentGalleryIndex((prev) => {
@@ -193,9 +249,7 @@ export default function KviriaHotel() {
   ]
 
   const placeholderStoryImages = [
-    "/placeholder.svg?height=240&width=320&text=Story+1",
-    "/placeholder.svg?height=240&width=320&text=Story+2",
-    "/placeholder.svg?height=240&width=320&text=Story+3",
+    "/placeholder.svg?height=240&width=320&text=Story+1"
   ]
 
   const placeholderLargePhoto = "/placeholder.svg?height=400&width=1200&text=Large+Photo"
@@ -317,21 +371,29 @@ export default function KviriaHotel() {
       {/* Tagline Section */}
       <section className="py-16 bg-[#242323] text-center">
         <h1 className="text-5xl font-bold tracking-wide">A PLACE LIKE NO OTHER</h1>
+     
+        {/* ჩატვირთვის ანიმაცია ტექსტის ქვემოთ */}
+        {loading && (
+          <div className="flex justify-center items-center mt-10">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-orange-400"></div>
+          </div>
+        )}
       </section>
 
-      {/* Image Gallery Preview */}
+      {/* Image Gallery Preview - უსასრულო სლაიდერი */}
       <section className="py-8">
         <div className="w-full px-0 overflow-hidden">
           <div className="slider-container overflow-hidden w-full">
             <div ref={sliderTrackRef} className="slider-track flex">
               {loading ? (
-                <div className="flex justify-center items-center h-80 w-full">
-                  <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-orange-400"></div>
+                <div className="hidden">
+                  {/* ჩატვირთვის ანიმაცია გადატანილია ზევით */}
                 </div>
               ) : (
                 <>
                   {sliderImages.length > 0 ? (
-                    sliderImages.map((src, i) => (
+                    // ყველა სურათი ორჯერ, რომ უსასრულოდ მოძრაობდეს
+                    [...sliderImages, ...sliderImages].map((src, i) => (
                       <div
                         key={i}
                         className="relative flex-shrink-0 h-[280px]"
@@ -343,7 +405,7 @@ export default function KviriaHotel() {
                           fill
                           sizes="350px"
                           className="object-cover"
-                          loading={i < 3 ? "eager" : "lazy"}
+                          loading={i < 6 ? "eager" : "lazy"}
                         />
                       </div>
                     ))
@@ -387,6 +449,7 @@ export default function KviriaHotel() {
               width: fit-content;
               display: flex;
               flex-wrap: nowrap;
+              transition: transform 0.1s linear;
             }
           `}</style>
         </div>
@@ -411,21 +474,44 @@ export default function KviriaHotel() {
             </p>
           </div>
 
-          {/* Story Images */}
-          <div className="flex justify-center items-center mb-20 w-full overflow-hidden">
-            <div className="w-full flex flex-col md:flex-row justify-center items-center gap-8">
-              {(storyImages.length > 0 ? storyImages : placeholderStoryImages).map((src, i) => (
-                <div key={i} className="relative h-[640px] w-full md:w-[30%] flex-shrink-0">
+          {/* Story Images - გაფართოებული კონტეინერი პანორამული ფოტოებისთვის */}
+          <div className="w-full overflow-hidden mb-20">
+            <div className="w-full max-w-7xl mx-auto">
+              {storyImages.length > 0 ? (
+                // მხოლოდ პირველი ფოტო გამოვაჩინოთ, თუ ის არსებობს
+                <div 
+                  className="relative w-full mb-0"
+                  style={{ 
+                    paddingTop: `${(1365 / 5005) * 100}%` /* პროპორციის შენარჩუნება: 5005:1365 */ 
+                  }}
+                >
                   <Image
-                    src={src}
-                    alt={`Our story ${i + 1}`}
+                    src={storyImages[0]}
+                    alt="Our story"
                     fill
-                    className="object-cover"
+                    className="object-contain"
                     loading="lazy"
-                    sizes="(max-width: 768px) 90vw, 30vw"
+                    sizes="(max-width: 768px) 90vw, 1200px"
                   />
                 </div>
-              ))}
+              ) : (
+                // ფოლბეკ ფოტო, თუ ფოტო არ არის
+                <div 
+                  className="relative w-full mb-0"
+                  style={{ 
+                    paddingTop: `${(1365 / 5005) * 100}%` /* პროპორციის შენარჩუნება: 5005:1365 */ 
+                  }}
+                >
+                  <Image
+                    src={placeholderStoryImages[0]}
+                    alt="Our story"
+                    fill
+                    className="object-contain"
+                    loading="lazy"
+                    sizes="(max-width: 768px) 90vw, 1200px"
+                  />
+                </div>
+              )}
             </div>
           </div>
 
@@ -443,19 +529,7 @@ export default function KviriaHotel() {
         </div>
       </section>
 
-      {/* Large Photo Section */}
-      <section className="py-12 flex justify-center">
-        <div className="relative w-[960px] h-[600px] mx-auto">
-          <Image
-            src={largePhoto || placeholderLargePhoto}
-            alt="Kviria hotel in Sighnaghi"
-            fill
-            className="object-cover"
-            loading="lazy"
-            sizes="960px"
-          />
-        </div>
-      </section>
+
 
       {/* Gallery Section */}
       <section id="gallery" className="py-20 bg-[#242323]">
@@ -646,7 +720,7 @@ export default function KviriaHotel() {
                         <div key={i} className="relative h-[300px] rounded-lg overflow-hidden shadow-lg">
                           <Image
                             src={src}
-                            alt={`Gallery image ${i + 22}`}
+                            alt={`Gallery image ${i + 23}`}
                             fill
                             className="object-cover"
                             sizes="(max-width: 768px) 100vw, 400px"
@@ -741,7 +815,7 @@ export default function KviriaHotel() {
         </div>
       </section>
 
-      {/* Guest Review - Text overlay on large photo */}
+      {/* Guest Review Photo */}
       <section className="py-20 bg-[#242323]">
         <div className="container mx-auto px-4">
           <div className="relative w-full mx-auto h-[630px] max-w-[980px]">
@@ -753,22 +827,6 @@ export default function KviriaHotel() {
               loading="lazy"
               sizes="(max-width: 768px) 100vw, (max-width: 1024px) 90vw, 980px"
             />
-            <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-              <div className="bg-white/90 backdrop-blur-sm p-6 rounded-lg max-w-lg text-center">
-                <h3 className="text-xl font-bold mb-3 text-gray-900">GUEST REVIEW</h3>
-                <div className="flex justify-center mb-3">
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <Star key={star} className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                  ))}
-                </div>
-                <p className="text-gray-700 mb-3 italic text-sm">
-                  "This hotel exceeded our expectations. The service was impeccable, the rooms were beautifully
-                  appointed, and the views were breathtaking. The wine tasting experience was unforgettable. We can't
-                  wait to return!"
-                </p>
-                <p className="font-semibold text-gray-900 text-sm">- Sarah & John, UK</p>
-              </div>
-            </div>
           </div>
         </div>
       </section>

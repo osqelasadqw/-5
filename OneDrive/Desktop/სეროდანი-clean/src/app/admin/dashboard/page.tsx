@@ -10,12 +10,12 @@ import { Home, ImageIcon, Bed, UtensilsCrossed, Wine, ArrowRight, Users } from "
 export default function AdminDashboardPage() {
   return (
     <div>
-      <h1 className="text-3xl font-bold mb-8">Admin Dashboard</h1>
+      <h1 className="text-3xl font-bold mb-8">ადმინ პანელი</h1>
 
       <Tabs defaultValue="overview" className="space-y-6">
         <TabsList>
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="admins">Manage Admins</TabsTrigger>
+          <TabsTrigger value="overview">მიმოხილვა</TabsTrigger>
+          <TabsTrigger value="admins">ადმინების მართვა</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview">
@@ -24,16 +24,16 @@ export default function AdminDashboardPage() {
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center">
                   <Home className="mr-2 h-5 w-5 text-blue-500" />
-                  Home Page
+                  მთავარი გვერდი
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <p className="text-gray-600 mb-4">
-                  Manage hero image, slider, story section, and other home page content.
+                  მართეთ მთავარი გვერდის სურათები, სლაიდერი და სხვა კონტენტი.
                 </p>
                 <Link href="/admin/home-page">
                   <Button variant="outline" className="w-full">
-                    Manage
+                    მართვა
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
                 </Link>
@@ -44,14 +44,16 @@ export default function AdminDashboardPage() {
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center">
                   <Bed className="mr-2 h-5 w-5 text-indigo-500" />
-                  Rooms
+                  ოთახები
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-gray-600 mb-4">Add, edit, or remove rooms with images, descriptions, and pricing.</p>
+                <p className="text-gray-600 mb-4">
+                  დაამატეთ, შეცვალეთ ან წაშალეთ ოთახები ფოტოებით, აღწერილობებითა და ფასებით.
+                </p>
                 <Link href="/admin/rooms">
                   <Button variant="outline" className="w-full">
-                    Manage
+                    მართვა
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
                 </Link>
@@ -62,14 +64,16 @@ export default function AdminDashboardPage() {
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center">
                   <ImageIcon className="mr-2 h-5 w-5 text-green-500" />
-                  Gallery
+                  გალერეა
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-gray-600 mb-4">Upload and organize photos for the gallery section.</p>
+                <p className="text-gray-600 mb-4">
+                  ატვირთეთ და დაალაგეთ ფოტოები გალერეის განყოფილებაში.
+                </p>
                 <Link href="/admin/gallery">
                   <Button variant="outline" className="w-full">
-                    Manage
+                    მართვა
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
                 </Link>
@@ -80,14 +84,16 @@ export default function AdminDashboardPage() {
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center">
                   <UtensilsCrossed className="mr-2 h-5 w-5 text-amber-500" />
-                  Fine Dining
+                  რესტორანი
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-gray-600 mb-4">Update restaurant images, menu, and dining information.</p>
+                <p className="text-gray-600 mb-4">
+                  განაახლეთ რესტორნის სურათები, მენიუ და ინფორმაცია.
+                </p>
                 <Link href="/admin/dining">
                   <Button variant="outline" className="w-full">
-                    Manage
+                    მართვა
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
                 </Link>
@@ -98,14 +104,16 @@ export default function AdminDashboardPage() {
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center">
                   <Wine className="mr-2 h-5 w-5 text-red-500" />
-                  Wine Cellar
+                  მარანი და ღვინო
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-gray-600 mb-4">Manage wine cellar images and information.</p>
+                <p className="text-gray-600 mb-4">
+                  მართეთ მარნის სურათები და ინფორმაცია.
+                </p>
                 <Link href="/admin/wines">
                   <Button variant="outline" className="w-full">
-                    Manage
+                    მართვა
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
                 </Link>
@@ -116,11 +124,13 @@ export default function AdminDashboardPage() {
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center">
                   <Users className="mr-2 h-5 w-5 text-purple-500" />
-                  Admin Users
+                  ადმინისტრატორები
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-gray-600 mb-4">Manage admin users and permissions.</p>
+                <p className="text-gray-600 mb-4">
+                  მართეთ ადმინისტრატორები და უფლებები.
+                </p>
                 <Button
                   variant="outline"
                   className="w-full"
@@ -129,7 +139,7 @@ export default function AdminDashboardPage() {
                     if (tabsTrigger) tabsTrigger.click()
                   }}
                 >
-                  Manage
+                  მართვა
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
               </CardContent>

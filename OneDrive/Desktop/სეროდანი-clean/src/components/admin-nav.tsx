@@ -17,8 +17,8 @@ export function AdminNav() {
   return (
     <div className="bg-gray-800 text-white h-screen w-64 fixed left-0 top-0 overflow-y-auto">
       <div className="p-4 border-b border-gray-700">
-        <h2 className="text-xl font-bold">Kviria Admin</h2>
-        <p className="text-gray-400 text-sm">Hotel Management</p>
+        <h2 className="text-xl font-bold">სეროდანი ადმინი</h2>
+        <p className="text-gray-400 text-sm">სასტუმროს მართვა</p>
       </div>
 
       <nav className="p-4">
@@ -27,7 +27,7 @@ export function AdminNav() {
             <Link href="/admin/dashboard">
               <Button variant={isActive("/admin/dashboard") ? "default" : "ghost"} className="w-full justify-start">
                 <Home className="mr-2 h-4 w-4" />
-                Dashboard
+                მთავარი პანელი
               </Button>
             </Link>
           </li>
@@ -35,15 +35,18 @@ export function AdminNav() {
             <Link href="/admin/home-page">
               <Button variant={isActive("/admin/home-page") ? "default" : "ghost"} className="w-full justify-start">
                 <Home className="mr-2 h-4 w-4" />
-                Home Page
+                მთავარი გვერდი
               </Button>
             </Link>
           </li>
           <li>
             <Link href="/admin/rooms">
-              <Button variant={isActive("/admin/rooms") ? "default" : "ghost"} className="w-full justify-start">
+              <Button 
+                variant={isActive("/admin/rooms") || pathname.startsWith("/admin/rooms/") ? "default" : "ghost"} 
+                className="w-full justify-start"
+              >
                 <Bed className="mr-2 h-4 w-4" />
-                Rooms
+                ოთახები
               </Button>
             </Link>
           </li>
@@ -51,7 +54,7 @@ export function AdminNav() {
             <Link href="/admin/gallery">
               <Button variant={isActive("/admin/gallery") ? "default" : "ghost"} className="w-full justify-start">
                 <ImageIcon className="mr-2 h-4 w-4" />
-                Gallery
+                გალერეა
               </Button>
             </Link>
           </li>
@@ -59,7 +62,7 @@ export function AdminNav() {
             <Link href="/admin/dining">
               <Button variant={isActive("/admin/dining") ? "default" : "ghost"} className="w-full justify-start">
                 <UtensilsCrossed className="mr-2 h-4 w-4" />
-                Fine Dining
+                რესტორანი
               </Button>
             </Link>
           </li>
@@ -67,7 +70,7 @@ export function AdminNav() {
             <Link href="/admin/wines">
               <Button variant={isActive("/admin/wines") ? "default" : "ghost"} className="w-full justify-start">
                 <Wine className="mr-2 h-4 w-4" />
-                Wine Cellar
+                მარანი და ღვინო
               </Button>
             </Link>
           </li>
@@ -81,7 +84,7 @@ export function AdminNav() {
           onClick={() => signOut()}
         >
           <LogOut className="mr-2 h-4 w-4" />
-          Logout
+          გასვლა
         </Button>
       </div>
     </div>
