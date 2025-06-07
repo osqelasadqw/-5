@@ -10,9 +10,7 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  experimental: {
-    esmExternals: 'loose',
-  },
+  // Windows-ზე ESM-ის პრობლემას აგვარებს, ვაუქმებთ experimental ფლაგს
 };
 
 module.exports = nextConfig; 
